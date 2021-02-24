@@ -3,8 +3,8 @@ package lib
 import "encoding/json"
 
 type UnifiedDataFormat struct {
-	Event string
-	Data interface{}
+	Event string `json:"event"`
+	Data interface{} `json:"data"`
 }
 
 func (f UnifiedDataFormat) getDataBytes() ([]byte, error) {

@@ -2,17 +2,28 @@ package main
 
 import (
 	"chat/lib"
+	"chat/lib/chat"
 	"chat/models"
 	"container/list"
 	"encoding/json"
 	"fmt"
 	"net"
 	"os"
+	"time"
 )
 
 var userConnMap = make(map[int]*lib.Client, 10)
 
 var waitMatch = list.New()
+
+var chatRooms = make([]chat.SingleChat, 10)
+
+var other = models.User{
+	Id:     9999,
+	Sex:    1,
+	Name:   "Mitsuha",
+	Avatar: "",
+}
 
 func main() {
 	listener, err := net.Listen("tcp", "0.0.0.0:65535")
@@ -21,6 +32,31 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("Start Server...")
+
+	go matching()
+	go func() {
+		for {
+			time.Sleep(5*time.Second)
+			fmt.Printf("Now client connect: %d\n", len(userConnMap))
+		}
+	}()
+
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+
+			for _, client := range userConnMap {
+				if client == nil {
+					continue
+				}
+				response, _ := json.Marshal(lib.UnifiedDataFormat{
+					Event: "leave",
+				})
+
+				client.Conn.Write(response)
+			}
+		}
+	}()
 	for {
 		conn, err := listener.Accept()
 
@@ -44,31 +80,19 @@ func main() {
 }
 
 func matching() {
-	c1 := waitMatch.Back().Value.(lib.Client)
-	c2 := waitMatch.Front().Value.(lib.Client)
+	for {
+		if waitMatch.Len() < 2 {
+			continue
+		}
+		c1 := waitMatch.Remove(waitMatch.Back()).(*lib.Client)
+		c2 := waitMatch.Remove(waitMatch.Front()).(*lib.Client)
 
-	c1Response, _ := json.Marshal(lib.UnifiedDataFormat{
-		Event: "matched",
-		Data:  c2.User,
-	})
+		room := chat.NewSingleChat(c1,c2)
 
-	c2Response, _ := json.Marshal(lib.UnifiedDataFormat{
-		Event: "matched",
-		Data:  c1.User,
-	})
+		room.SendJoinMessage()
 
-	_, err := c1.Conn.Write(c1Response)
-
-	if err != nil {
-		waitMatch.PushBack(c2)
-		return
-	}
-
-	_, err = c2.Conn.Write(c2Response)
-
-	if err != nil {
-		waitMatch.PushFront(c1)
-		return
+		c1.Status = lib.ClientChat
+		c2.Status = lib.ClientChat
 	}
 }
 
@@ -77,12 +101,19 @@ func handleRegister(client *lib.Client, data []byte){
 
 	err := json.Unmarshal(data, &user)
 
-	if err != nil {
+	if err != nil{
 		fmt.Println(err)
 		return
 	}
 
+	if user.Id == 0 {
+		return
+	}
+
+	fmt.Println(user)
+
 	client.User = user
+	client.Status = lib.ClientNone
 
 	userConnMap[user.Id] = client
 }
@@ -97,15 +128,22 @@ func handleMessage(client *lib.Client, data []byte)  {
 		return
 	}
 
+	sender := message.Sender
+	message.Sender = message.Receiver
+	message.Receiver = sender
+
 	receiver, exist := userConnMap[message.Receiver.Id]
 
 	if ! exist {
 		return
 	}
 
-	fmt.Printf("send: %s", message.Text)
+	fmt.Printf("send %s to %d\n", message.Text, message.Receiver.Id)
 
-	responseData, _ := json.Marshal(message)
+	responseData, _ := json.Marshal(lib.UnifiedDataFormat{
+		Event: "message",
+		Data:  message,
+	})
 
 	_, err = receiver.Conn.Write(responseData)
 
@@ -117,5 +155,20 @@ func handleMessage(client *lib.Client, data []byte)  {
 }
 
 func handleMatching(client *lib.Client, _ []byte) {
-	waitMatch.PushBack(client)
+	//if client.Status == lib.ClientWait {
+	//	return
+	//}
+	//waitMatch.PushBack(client)
+	//client.Status = lib.ClientMatch
+
+	c2Response, _ := json.Marshal(lib.UnifiedDataFormat{
+		Event: "matched",
+		Data:  other,
+	})
+
+	client.Conn.Write(c2Response)
+}
+
+func handleLeave(client *lib.Client, _ []byte) {
+
 }
