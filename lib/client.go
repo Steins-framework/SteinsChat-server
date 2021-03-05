@@ -9,7 +9,7 @@ import (
 
 type Client struct {
 	Conn net.Conn
-	User models.User
+	User *models.User
 	Status int
 	event map[string]func(*Client, []byte)
 }

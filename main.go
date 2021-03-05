@@ -2,9 +2,8 @@ package main
 
 import (
 	"chat/lib"
-	"chat/lib/chat"
+	"chat/lib/pool"
 	"chat/models"
-	"container/list"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -13,25 +12,13 @@ import (
 	"os"
 )
 
-var userConnMap = make(map[string]*lib.Client, 10)
-
-var waitMatch = list.New()
-
-var chatRooms = make(map[string]*chat.SingleChat) // user_id => SingleChat
-
-var other = models.User{
-	Id:     "AAAAAAAAA",
-	Sex:    1,
-	Name:   "Mitsuha",
-	Avatar: "",
-}
-
 func main() {
 	go func() {
 		_ = http.ListenAndServe("0.0.0.0:9999", nil)
 	}()
 
 	listener, err := net.Listen("tcp", "0.0.0.0:9966")
+
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -77,10 +64,10 @@ func handleRegister(client *lib.Client, data []byte){
 
 	fmt.Println(user)
 
-	client.User = user
+	client.User = &user
 	client.Status = lib.ClientNone
 
-	userConnMap[user.Id] = client
+	pool.UserConnPool.Add(user.Id, client)
 }
 
 func handleMessage(client *lib.Client, data []byte)  {
@@ -96,74 +83,72 @@ func handleMessage(client *lib.Client, data []byte)  {
 	if client.User.Id != message.Sender.Id {
 		return
 	}
-	///////////
-	//message.Sender, message.Receiver = message.Receiver , message.Sender
-	//////////////
 
-	receiver, exist := userConnMap[message.Receiver.Id]
-
-	if ! exist {
-		return
+	c1, err := pool.UserConnPool.OfUser(message.Sender)
+	if err == nil {
+		_, _ = c1.Emit("message", message)
 	}
-
-	fmt.Printf("send %s to %s\n", message.Text, message.Receiver.Id)
-
-	_, _ = receiver.Emit("message", message)
-	_, _ = client.Emit("message", message)
+	c2, err := pool.UserConnPool.OfUser(message.Receiver)
+	if err == nil {
+		_, _ = c2.Emit("message", message)
+	}
 }
 
 func handleMatching(client *lib.Client, _ []byte) {
-
-	//client.Emit("matched", other)
-	//
-	//return
-
 	if client.User.Id == "" {
 		return
 	}
-	var other *lib.Client
+	var other *models.User
 	for {
-		if waitMatch.Len() == 0 {
-			waitMatch.PushBack(client)
-			client.Status = lib.ClientMatch
+		if pool.WaitMatchPool.Len() == 0 {
+			pool.WaitMatchPool.Add(client.User)
 			return
 		}
 
-		other = waitMatch.Remove(waitMatch.Front()).(*lib.Client)
+		other = pool.WaitMatchPool.Pop()
 
-		if other.User.Id == client.User.Id {
+		if other.Id == client.User.Id {
 			continue
 		}
 
-		if other.IsConnect() {
+		if pool.UserConnPool.IsOnline(other) {
 			break
 		}
 	}
 
-	room := chat.NewSingleChat(client,other)
+	room := models.SingleRoom{
+		U1:     client.User,
+		U2:     other,
+		Topic:  "",
+		Status: 0,
+	}
 
-	room.SendJoinMessage()
+	c1, err := pool.UserConnPool.OfUser(room.U1)
 
-	chatRooms[client.User.Id] = room
-	chatRooms[other.User.Id] = room
+	if err == nil {
+		_, _ = c1.Emit("matched", room)
+	}
 
-	client.Status = lib.ClientChat
-	other.Status = lib.ClientChat
+	c2, err := pool.UserConnPool.OfUser(room.U2)
+
+	if err == nil {
+		_, _ = c2.Emit("matched", room)
+	}
 }
 
 func handleLeave(client *lib.Client, _ []byte) {
-	room, exist := chatRooms[client.User.Id]
-	if ! exist {
+	room := pool.ChatRoomPool.Leave(client.User)
+	if room == nil {
 		return
 	}
-	other := room.Other(client)
 
-	_, _ = other.Emit("leave", room)
+	c2, err := pool.UserConnPool.OfUser(room.Other(client.User))
 
-	client.Status = lib.ClientWait
-	other.Status = lib.ClientWait
-	delete(chatRooms, client.User.Id)
-	delete(chatRooms, other.User.Id)
+	fmt.Println(err)
+	if err == nil {
+		fmt.Print(c2)
+		_, _ = c2.Emit("leave", room)
+	}
 }
 
 func heartbeat(client *lib.Client, ping []byte) {
@@ -175,6 +160,5 @@ func handleClose(client *lib.Client, _ []byte) {
 
 	handleLeave(client, nil)
 
-	delete(userConnMap, client.User.Id)
-	delete(chatRooms, client.User.Id)
+	pool.UserConnPool.Delete(client.User.Id)
 }
