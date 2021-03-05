@@ -42,7 +42,7 @@ func (c *Client) Trigger(format UnifiedDataFormat) {
 	}
 }
 
-func (c *Client) Close() error{
+func (c *Client) Close() error {
 	defer c.Trigger(UnifiedDataFormat{Event: "_close"})
 
 	return c.Conn.Close()
@@ -54,8 +54,8 @@ func (c *Client) Listen() {
 
 		l, err := c.Conn.Read(receive)
 		if err != nil {
-			_ = c.Conn.Close()
-			c.Trigger(UnifiedDataFormat{Event: "_close"})
+			_ = c.Close()
+			break
 		}
 
 		receive = receive[:l]
@@ -76,4 +76,33 @@ func (c *Client) Listen() {
 
 		c.Trigger(format)
 	}
+}
+
+func (c *Client) WriteObject(data interface{}) (int, error) {
+	response, err := json.Marshal(data)
+	if err != nil {
+		return 0, err
+	}
+
+	l, err := c.Conn.Write(response)
+
+	if err != nil {
+		_ = c.Close()
+	}
+	return l,err
+}
+
+func (c *Client) Emit(event string, data interface{}) (int, error) {
+	return c.WriteObject(UnifiedDataFormat{
+		Event: event,
+		Data:  data,
+	})
+}
+
+func (c *Client) IsConnect() bool {
+	beat, _ := json.Marshal(UnifiedDataFormat{Event: "pong"})
+
+	_, err := c.Conn.Write(beat)
+
+	return err == nil
 }

@@ -3,7 +3,6 @@ package chat
 import (
 	"chat/lib"
 	"chat/models"
-	"encoding/json"
 )
 
 type SingleChat struct {
@@ -28,20 +27,8 @@ func (s *SingleChat) Other(client *lib.Client) *lib.Client {
 }
 
 func (s *SingleChat) SendJoinMessage() {
-
-	c1Response, _ := json.Marshal(lib.UnifiedDataFormat{
-		Event: "matched",
-		Data:  s.c1.User,
-	})
-
-	c2Response, _ := json.Marshal(lib.UnifiedDataFormat{
-		Event: "matched",
-		Data:  s.c1.User,
-	})
-
-	_, _ = s.c1.Conn.Write(c1Response)
-
-	_, _ = s.c2.Conn.Write(c2Response)
+	_, _ = s.c1.Emit("matched", s.c2.User)
+	_, _ = s.c2.Emit("matched", s.c1.User)
 }
 
 func (s *SingleChat) SendMessage(message models.Message)  {
