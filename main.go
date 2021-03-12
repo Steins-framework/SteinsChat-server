@@ -116,7 +116,7 @@ func handleMatching(client *lib.Client, _ []byte) {
 		}
 	}
 
-	room := models.SingleRoom{
+	room := &models.SingleRoom{
 		U1:     client.User,
 		U2:     other,
 		Topic:  "",
@@ -134,10 +134,14 @@ func handleMatching(client *lib.Client, _ []byte) {
 	if err == nil {
 		_, _ = c2.Emit("matched", room)
 	}
+
+	pool.ChatRoomPool.AddRoom(room)
 }
 
 func handleLeave(client *lib.Client, _ []byte) {
 	room := pool.ChatRoomPool.Leave(client.User)
+
+	fmt.Print(room)
 	if room == nil {
 		return
 	}
@@ -157,6 +161,10 @@ func heartbeat(client *lib.Client, ping []byte) {
 
 func handleClose(client *lib.Client, _ []byte) {
 	fmt.Printf("Connect close:%s\n", client.Conn.RemoteAddr().String())
+
+	if client.User == nil {
+		return
+	}
 
 	handleLeave(client, nil)
 

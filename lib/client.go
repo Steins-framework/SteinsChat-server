@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strings"
 )
 
 type Client struct {
@@ -36,7 +37,6 @@ func (c *Client) Trigger(format UnifiedDataFormat) {
 		fmt.Println(err)
 		return
 	}
-
 	if closure, ok := c.event[format.Event]; ok {
 		closure(c, bytes)
 	}
@@ -64,7 +64,9 @@ func (c *Client) Listen() {
 			continue
 		}
 
-		fmt.Printf("receiv %d:%s\n", l, string(receive))
+		if ! strings.Contains(string(receive), "heartbeat") {
+			fmt.Printf("receiv %d:%s\n", l, string(receive))
+		}
 
 		format := UnifiedDataFormat{}
 

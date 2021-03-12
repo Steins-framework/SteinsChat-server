@@ -18,6 +18,9 @@ func (c *ChatRoom) AddRoom(room *models.SingleRoom) {
 }
 
 func (c *ChatRoom) Leave(user *models.User) *models.SingleRoom {
+	if user == nil {
+		return nil
+	}
 	room, exist := c.pool[user.Id]
 
 	if ! exist {

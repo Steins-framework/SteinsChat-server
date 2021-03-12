@@ -24,7 +24,9 @@ func (p *UserConn) Get(key string) (*lib.Client, error) {
 
 func (p *UserConn) Add(key string, client *lib.Client) {
 	if c, err := p.Get(key); err == nil {
-		_ = c.Close()
+		if client.Conn != c.Conn {
+			_ = c.Close()
+		}
 	}
 
 	p.pool[key] = client
@@ -41,7 +43,7 @@ func (p *UserConn) IsOnline(user *models.User) bool {
 }
 
 func (p *UserConn) Delete(key string) {
-	p.pool[key] = nil
+	delete(p.pool, key)
 }
 
 func (p *UserConn) OfUser(user *models.User) (*lib.Client, error) {
